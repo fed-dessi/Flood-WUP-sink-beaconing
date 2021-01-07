@@ -36,7 +36,6 @@
 #include <task.h>
 #include <queue.h>
 #include <sl_sleeptimer.h>
-#include <sl_udelay.h>
 
 #include "string.h"
 #include "strings.h"
@@ -90,12 +89,12 @@ static void transmitterTaskFunction (void*);
 static TaskHandle_t transmitterTaskHandle;
 
 ///Receiver Task
-static StaticTask_t receiverTaskTCB;
-static StackType_t receiverTaskStack[STACK_SIZE];
-static void receiverTaskFunction (void*);
-static TaskHandle_t receiverTaskHandle;
+//static StaticTask_t receiverTaskTCB;
+//static StackType_t receiverTaskStack[STACK_SIZE];
+//static void receiverTaskFunction (void*);
+//static TaskHandle_t receiverTaskHandle;
 
-///Receiver Task
+///Beacon Task
 static StaticTask_t beaconTaskTCB;
 static StackType_t beaconTaskStack[STACK_SIZE];
 static void beaconTaskFunction (void*);
@@ -145,21 +144,21 @@ int main(void)
   rail_handle = app_init();
 
   //Transmitter Task initialization
-  transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 2, transmitterTaskStack, &transmitterTaskTCB);
+  transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 3, transmitterTaskStack, &transmitterTaskTCB);
   if (transmitterTaskHandle == NULL)
     {
       return 0;
     }
 
   //Receiver Task
-  receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 4, receiverTaskStack, &receiverTaskTCB);
-  if (receiverTaskHandle == NULL)
-   {
-     return(0);
-   }
+//  receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 4, receiverTaskStack, &receiverTaskTCB);
+//  if (receiverTaskHandle == NULL)
+//   {
+//     return(0);
+//   }
 
   //Packet Generator Task Initialization
-  beaconTaskHandle = xTaskCreateStatic (beaconTaskFunction, "beaconTask", STACK_SIZE, NULL, 3, beaconTaskStack, &beaconTaskTCB);
+  beaconTaskHandle = xTaskCreateStatic (beaconTaskFunction, "beaconTask", STACK_SIZE, NULL, 2, beaconTaskStack, &beaconTaskTCB);
   if (beaconTaskHandle == NULL)
    {
      return 0;
@@ -267,7 +266,7 @@ void transmitterTaskFunction(void *tt){
       if(txPacket.header.wupSeq == Wb){
           snprintf (&transmitterBuffer, 100, "\r\nBeacon update sent!\r\n");
       }else{
-          snprintf (&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %lu\r\nWUP Sequence: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq);
+          snprintf (&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %u\r\nWUP Sequence: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq);
       }
 
 
@@ -277,7 +276,7 @@ void transmitterTaskFunction(void *tt){
 
 //TODO: Create Receiver task: when the sink receives a Wr packet and the hopcount is (own+1) it checks its retransmission buffer for the packet and retransmits
 
-//TODO: Create Package generation task
+//TODO: Create Packet generation task
 
 //TODO: Create delayer task
 
