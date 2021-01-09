@@ -182,14 +182,14 @@ int main(void)
   rail_handle = app_init();
 
   //Transmitter Task
-  transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 4, transmitterTaskStack, &transmitterTaskTCB);
+  transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 3, transmitterTaskStack, &transmitterTaskTCB);
   if (transmitterTaskHandle == NULL)
     {
       return 0;
     }
 
   //Receiver Task
-  receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 3, receiverTaskStack, &receiverTaskTCB);
+  receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 4, receiverTaskStack, &receiverTaskTCB);
   if (receiverTaskHandle == NULL)
    {
      return(0);
@@ -356,7 +356,7 @@ void transmitterTaskFunction(void *tt){
           snprintf (&transmitterBuffer, 100, "\r\nBeacon update sent!\r\n");
       }
       if(txPacket.header.wupSeq == Wd){
-          snprintf (&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %u\r\nWUP Sequence: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq);
+          snprintf (&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %u\r\nWUP Sequence: %u\r\nHop Count: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq, txPacket.header.hopCount);
       }
 
 
