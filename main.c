@@ -31,20 +31,23 @@
   #include "sl_system_process_action.h"
 #endif // SL_CATALOG_KERNEL_PRESENT
 
-#include <FreeRTOS.h>
-#include <FreeRTOSConfig.h>
-#include <task.h>
-#include <queue.h>
-#include <sl_sleeptimer.h>
+#include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "task.h"
+#include "queue.h"
+#include "sl_sleeptimer.h"
+#include "sl_udelay.h"
 
 #include "string.h"
 #include "strings.h"
 #include "stdio.h"
 
-#include <sl_uartdrv_usart_vcom_config.h>
-#include <sl_uartdrv_instances.h>
-#include <sl_board_control_config.h>
-#include <sl_power_manager_config.h>
+#include "sl_uartdrv_usart_vcom_config.h"
+#include "sl_uartdrv_instances.h"
+#include "sl_board_control_config.h"
+#include "sl_power_manager_config.h"
+#include "sl_led.h"
+#include "sl_simple_led_instances.h"
 // -----------------------------------------------------------------------------
 //                              Macros and Typedefs
 // -----------------------------------------------------------------------------
@@ -52,7 +55,7 @@
 #define RETRANSMISSION_BUFFER_DEFAULT_LENGTH 10
 #define STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 #define SLEEPTIMER_DELAY_MS 1000
-#define PACKET_GENERATION_MS_DELAY 3000
+#define PACKET_GENERATION_MS_DELAY 1000
 
 enum wupSequence{
   Wb,
@@ -77,40 +80,34 @@ typedef struct
 // -----------------------------------------------------------------------------
 //                          Static Function Declarations
 // -----------------------------------------------------------------------------
-///Idle task and Timer task definitions
-static StaticTask_t xTimerTaskTCB;
-static StackType_t uxTimerTaskStack[configTIMER_TASK_STACK_DEPTH];
-static StaticTask_t xIdleTaskTCB;
-static StackType_t uxIdleTaskStack[configMINIMAL_STACK_SIZE];
-
 /// Transmitter Task
 static StaticTask_t transmitterTaskTCB;
 static StackType_t transmitterTaskStack[STACK_SIZE];
-static void transmitterTaskFunction (void*);
+static void transmitterTaskFunction ();
 static TaskHandle_t transmitterTaskHandle;
 
 ///Receiver Task
 static StaticTask_t receiverTaskTCB;
 static StackType_t receiverTaskStack[STACK_SIZE];
-static void receiverTaskFunction (void*);
+static void receiverTaskFunction ();
 static TaskHandle_t receiverTaskHandle;
 
 ///Beacon Task
 static StaticTask_t beaconTaskTCB;
 static StackType_t beaconTaskStack[STACK_SIZE];
-static void beaconTaskFunction (void*);
+static void beaconTaskFunction ();
 static TaskHandle_t beaconTaskHandle;
 
 ///Packet generator Task
 static StaticTask_t pktGeneratorTaskTCB;
 static StackType_t pktGeneratorTaskStack[STACK_SIZE];
-static void pktGeneratorTaskFunction (void*);
+static void pktGeneratorTaskFunction ();
 static TaskHandle_t pktGeneratorTaskHandle;
 
 ///Delayer Task
 static StaticTask_t delayerTaskTCB;
 static StackType_t delayerTaskStack[configMINIMAL_STACK_SIZE];
-static void delayerTaskFunction (void*);
+static void delayerTaskFunction ();
 static TaskHandle_t delayerTaskHandle;
 
 ///RFSense callback
@@ -181,51 +178,52 @@ int main(void)
   // task(s) if the kernel is present.
   rail_handle = app_init();
 
+
   //Transmitter Task
-  transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 3, transmitterTaskStack, &transmitterTaskTCB);
-  if (transmitterTaskHandle == NULL)
-    {
-      return 0;
-    }
+    transmitterTaskHandle = xTaskCreateStatic (transmitterTaskFunction, "transmitterTask", STACK_SIZE, NULL, 3, transmitterTaskStack, &transmitterTaskTCB);
+    if (transmitterTaskHandle == NULL)
+      {
+        return 0;
+      }
 
-  //Receiver Task
-  receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 4, receiverTaskStack, &receiverTaskTCB);
-  if (receiverTaskHandle == NULL)
-   {
-     return(0);
-   }
+    //Receiver Task
+    receiverTaskHandle = xTaskCreateStatic (receiverTaskFunction, "receiverTask", STACK_SIZE, NULL, 4, receiverTaskStack, &receiverTaskTCB);
+    if (receiverTaskHandle == NULL)
+     {
+       return(0);
+     }
 
-  //Beacon Task
-  beaconTaskHandle = xTaskCreateStatic (beaconTaskFunction, "beaconTask", STACK_SIZE, NULL, 2, beaconTaskStack, &beaconTaskTCB);
-  if (beaconTaskHandle == NULL)
-   {
-     return 0;
-   }
+    //Beacon Task
+    beaconTaskHandle = xTaskCreateStatic (beaconTaskFunction, "beaconTask", STACK_SIZE, NULL, 2, beaconTaskStack, &beaconTaskTCB);
+    if (beaconTaskHandle == NULL)
+     {
+       return 0;
+     }
 
-  //Packet Generator Task
-  pktGeneratorTaskHandle = xTaskCreateStatic (pktGeneratorTaskFunction, "pktGeneratorTask", STACK_SIZE, NULL, 1, pktGeneratorTaskStack, &pktGeneratorTaskTCB);
-  if (pktGeneratorTaskHandle == NULL)
-   {
-     return 0;
-   }
+    //Packet Generator Task
+    pktGeneratorTaskHandle = xTaskCreateStatic (pktGeneratorTaskFunction, "pktGeneratorTask", STACK_SIZE, NULL, 1, pktGeneratorTaskStack, &pktGeneratorTaskTCB);
+    if (pktGeneratorTaskHandle == NULL)
+     {
+       return 0;
+     }
 
-  //Delayer Task
-  //This task prevents going into sleep mode again after waking up. "Sleep mode" is just the Idle Task running,
-  //when we wake up with RFSense we would immediately fall back into it after the callback.
-  delayerTaskHandle = xTaskCreateStatic (delayerTaskFunction, "delayerTask", configMINIMAL_STACK_SIZE, NULL, 1, delayerTaskStack, &delayerTaskTCB);
-  if (delayerTaskHandle == NULL)
-   {
-     return(0);
-   }
+    //Delayer Task
+    //This task prevents going into sleep mode again after waking up. "Sleep mode" is just the Idle Task running,
+    //when we wake up with RFSense we would immediately fall back into it after the callback.
+    delayerTaskHandle = xTaskCreateStatic (delayerTaskFunction, "delayerTask", configMINIMAL_STACK_SIZE, NULL, 1, delayerTaskStack, &delayerTaskTCB);
+    if (delayerTaskHandle == NULL)
+     {
+       return(0);
+     }
 
-  //setting tx fifo
-  RAIL_SetTxFifo (rail_handle, railTxFifo, 0, sizeof(pkt_t) * QUEUE_DEFAULT_LENGTH);
+    //setting tx fifo
+    RAIL_SetTxFifo (rail_handle, railTxFifo, 0, sizeof(pkt_t) * QUEUE_DEFAULT_LENGTH);
 
-  //enabling vcom
-  GPIO_PinOutSet (SL_BOARD_ENABLE_VCOM_PORT, SL_BOARD_ENABLE_VCOM_PIN);
+    //enabling vcom
+    GPIO_PinOutSet (SL_BOARD_ENABLE_VCOM_PORT, SL_BOARD_ENABLE_VCOM_PIN);
 
-  //Init Queues
-  transmitterQueueHandle = xQueueCreateStatic(QUEUE_DEFAULT_LENGTH, sizeof(pkt_t), transmitterQueue, &transmitterQueueDataStruct);
+    //Init Queues
+    transmitterQueueHandle = xQueueCreateStatic(QUEUE_DEFAULT_LENGTH, sizeof(pkt_t), transmitterQueue, &transmitterQueueDataStruct);
 
 
 #if defined(SL_CATALOG_KERNEL_PRESENT)
@@ -251,29 +249,7 @@ int main(void)
 // -----------------------------------------------------------------------------
 //                          Static Function Definitions
 // -----------------------------------------------------------------------------
-///Idle and Timer Task definition
-void vApplicationGetIdleTaskMemory (StaticTask_t **ppxIdleTaskTCBBuffer,
-                               StackType_t **ppxIdleTaskStackBuffer,
-                               uint32_t *pulIdleTaskStackSize)
-{
-  //Declare static variables so they're not placed on the stack
-
-  *ppxIdleTaskTCBBuffer = &xIdleTaskTCB;
-  *ppxIdleTaskStackBuffer = uxIdleTaskStack;
-  *pulIdleTaskStackSize = configMINIMAL_STACK_SIZE;
-}
-
-void vApplicationGetTimerTaskMemory (StaticTask_t **ppxTimerTaskTCBBuffer,
-                                StackType_t **ppxTimerTaskStackBuffer,
-                                uint32_t *pulTimerTaskStackSize)
-{
-
-  *ppxTimerTaskTCBBuffer = &xTimerTaskTCB;
-  *ppxTimerTaskStackBuffer = uxTimerTaskStack;
-  *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
-}
-
-void beaconTaskFunction(void *bt){
+void beaconTaskFunction(){
   int i = 0;
   while(i<3){
       generatedPacket.header.hopCount = 0;
@@ -283,7 +259,7 @@ void beaconTaskFunction(void *bt){
       xQueueSend(transmitterQueueHandle, (void *)&generatedPacket, 0);
 
       i++;
-      vTaskDelay(pdMS_TO_TICKS(1100));
+      vTaskDelay(pdMS_TO_TICKS(1000));
   }
   //Start the packet generator task
   xTaskNotifyGive(pktGeneratorTaskHandle);
@@ -299,7 +275,7 @@ void beaconTaskFunction(void *bt){
 }
 
 ///Packet Generator Task
-void pktGeneratorTaskFunction (void *pgt){
+void pktGeneratorTaskFunction (){
   //Wait for the initial beaconing phase to finish before generating the packets
   ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
   while (1)
@@ -332,7 +308,7 @@ void pktGeneratorTaskFunction (void *pgt){
 }
 
 
-void transmitterTaskFunction(void *tt){
+void transmitterTaskFunction(){
   while(1){
       xQueueReceive(transmitterQueueHandle, &(txPacket), portMAX_DELAY);
 
@@ -343,7 +319,7 @@ void transmitterTaskFunction(void *tt){
       //Simulate sending a WUP packet to wake up nodes on the sub GHZ frequency.
       //In our case we send the actual packet
       RAIL_WriteTxFifo (rail_handle, (uint8_t*) &txPacket, sizeof(pkt_t), false);
-      while (RAIL_StartTx (rail_handle, 21, 0, NULL) != RAIL_STATUS_NO_ERROR);
+      while (RAIL_StartTx (rail_handle, 1, 0, NULL) != RAIL_STATUS_NO_ERROR);
       //Wait for 100ms to be sure that the node have woken up
       //We are still in the rx wake up window (1sec)
       sl_sleeptimer_delay_millisecond (100);
@@ -353,19 +329,19 @@ void transmitterTaskFunction(void *tt){
 
       //SERIAL OUTPUT FOR DEBUGGING PURPOSES
       if(txPacket.header.wupSeq == Wb){
-          snprintf (&transmitterBuffer, 100, "\r\nBeacon update sent!\r\n");
+          snprintf ((char*)&transmitterBuffer, 100, "\r\nBeacon update sent!\r\n");
       }
       if(txPacket.header.wupSeq == Wd){
-          snprintf (&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %u\r\nWUP Sequence: %u\r\nHop Count: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq, txPacket.header.hopCount);
+          snprintf ((char*)&transmitterBuffer, 100, "Packet sent:\r\nSequence number: %u\r\nWUP Sequence: %u\r\nHop Count: %u\r\n", txPacket.header.pktSeq, txPacket.header.wupSeq, txPacket.header.hopCount);
       }
 
 
-      while (ECODE_OK != UARTDRV_TransmitB (sl_uartdrv_usart_vcom_handle, &transmitterBuffer[0], strlen (transmitterBuffer)));
+      while (ECODE_OK != UARTDRV_TransmitB (sl_uartdrv_usart_vcom_handle, &transmitterBuffer[0], strlen ((char*)transmitterBuffer)));
   }
 }
 
 ///Receiver Task
-void receiverTaskFunction (void *rt){
+void receiverTaskFunction (){
   while (true)
     {
       ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
@@ -382,8 +358,8 @@ void receiverTaskFunction (void *rt){
 
           if(rxPacket.header.wupSeq == Wr){
               if(rxPacket.header.hopCount == hopCount){
-                  snprintf (&transmitterBuffer, 100, "\r\nRetransmit Packet received:\r\nPacket Sequence: %u\r\n", rxPacket.header.pktSeq);
-                  while (ECODE_OK != UARTDRV_TransmitB (sl_uartdrv_usart_vcom_handle, &transmitterBuffer[0], strlen (transmitterBuffer)));
+                  snprintf ((char*)&transmitterBuffer, 100, "\r\nRetransmit Packet received:\r\nPacket Sequence: %u\r\n", rxPacket.header.pktSeq);
+                  while (ECODE_OK != UARTDRV_TransmitB (sl_uartdrv_usart_vcom_handle, &transmitterBuffer[0], strlen ((char*)transmitterBuffer)));
 
                   for(unsigned int i = 0; i < retransmissionBufferIndex; i++){
                       if(retransmissionBuffer[i].header.pktSeq == rxPacket.header.pktSeq){
@@ -402,7 +378,7 @@ void receiverTaskFunction (void *rt){
 
 
 ///Delayer task, avoids we immediately go to sleep after waking up with RFSense
-void delayerTaskFunction (void *dt)
+void delayerTaskFunction ()
 {
   while (1)
     {
@@ -441,21 +417,31 @@ void rfSenseCb ()
   //and notify the delayer task so we don't immediately go to sleep
   if (RAIL_StartRx (rail_handle, 0 , NULL) == RAIL_STATUS_NO_ERROR)
     {
-      xTaskNotifyGive(delayerTaskHandle);
+      xHigherPriorityTaskWoken = pdFALSE;
+      vTaskNotifyGiveFromISR(delayerTaskHandle, &xHigherPriorityTaskWoken);
+      portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
     }
 }
 
 
 ///RAIL event handler
-void
-sl_rail_app_on_event (RAIL_Handle_t rail_handle, RAIL_Events_t events)
+void sl_rail_util_on_event(RAIL_Handle_t rail_handle, RAIL_Events_t events)
 {
   if (events & RAIL_EVENT_CAL_NEEDED)
     {
       RAIL_Calibrate (rail_handle, NULL, RAIL_CAL_ALL_PENDING);
     }
+  if (events & RAIL_EVENT_TX_PACKET_SENT)
+    {
+      sl_led_toggle (&sl_led_led0);
+      sl_udelay_wait (10000);
+      sl_led_toggle (&sl_led_led0);
+    }
   if (events & RAIL_EVENT_RX_PACKET_RECEIVED)
     {
+      sl_led_toggle (&sl_led_led1);
+      sl_udelay_wait (10000);
+      sl_led_toggle (&sl_led_led1);
       xHigherPriorityTaskWoken = pdFALSE;
       //new rx -> deferred handler architecture
       RAIL_HoldRxPacket (rail_handle);
